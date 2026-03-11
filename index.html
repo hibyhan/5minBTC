@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC 5MIN TRACKER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --panel: #0f1217;
+    --border: #1e2530;
+    --accent: #f0b429;
+    --up: #22c55e;
+    --down: #ef4444;
+    --muted: #4a5568;
+    --text: #e2e8f0;
+    --dim: #718096;
+    --up-bg: rgba(34,197,94,0.06);
+    --down-bg: rgba(239,68,68,0.06);
+    --up-border: rgba(34,197,94,0.22);
+    --down-border: rgba(239,68,68,0.22);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px; font-weight: 700; letter-spacing: 0.15em;
+    color: var(--accent);
+  }
+  .logo span { color: var(--dim); }
+  .header-right { display: flex; align-items: center; gap: 14px; }
+
+  .live-badge {
+    display: flex; align-items: center; gap: 7px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; color: var(--up); letter-spacing: 0.1em;
+  }
+  .live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--up);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+
+  .btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; letter-spacing: 0.08em; padding: 7px 14px;
+    border: 1px solid var(--border); background: transparent; color: var(--dim);
+    cursor: pointer; transition: all .2s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.loading { border-color: var(--accent); color: var(--accent); opacity: .6; pointer-events: none; }
+
+  /* ── LIVE PANEL ── */
+  .live-panel {
+    display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    gap: 1px; background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .live-cell { background: var(--panel); padding: 18px 24px; }
+  .cell-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px; letter-spacing: 0.15em; color: var(--dim);
+    margin-bottom: 8px; text-transform: uppercase;
+  }
+  .cell-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 20px; font-weight: 700; line-height: 1;
+  }
+  .cell-value.up { color: var(--up); }
+  .cell-value.down { color: var(--down); }
+  .cell-value.accent { color: var(--accent); }
+  .cell-sub { font-size: 11px; color: var(--dim); margin-top: 5px; font-family: 'Space Mono', monospace; }
+
+  .price-pair { display: flex; gap: 16px; align-items: baseline; }
+  .vs { color: var(--muted); font-family: 'Space Mono', monospace; font-size: 11px; }
+
+  .skew-bar { margin-top: 10px; height: 2px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .skew-fill { height: 100%; background: linear-gradient(90deg, var(--up), var(--down)); transition: width .5s ease; }
+
+  /* ── STATS ── */
+  .stats-bar {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    gap: 1px; background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-cell { background: var(--panel); padding: 13px 20px; display: flex; flex-direction: column; gap: 4px; }
+  .stat-label { font-family: 'Space Mono', monospace; font-size: 8px; letter-spacing: 0.15em; color: var(--dim); text-transform: uppercase; }
+  .stat-value { font-family: 'Space Mono', monospace; font-size: 17px; font-weight: 700; color: var(--text); }
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.up   { color: var(--up); }
+  .stat-value.down { color: var(--down); }
+
+  /* ── LOADING ── */
+  .loading-bar { height: 2px; background: var(--border); position: relative; overflow: hidden; }
+  .loading-bar::after {
+    content: ''; position: absolute; left: -40%; width: 40%; height: 100%;
+    background: var(--accent); animation: load 1.2s ease-in-out infinite;
+  }
+  @keyframes load { to { left: 110%; } }
+  .hidden { display: none !important; }
+
+  /* ── TABLE WRAPPER ── */
+  .table-wrap { padding: 0 20px 48px; overflow-x: auto; }
+  .table-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 0 12px;
+  }
+  .table-title { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.15em; color: var(--dim); text-transform: uppercase; }
+  .table-meta  { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); letter-spacing: 0.08em; }
+
+  /* ── TABLE ── */
+  table { width: 100%; border-collapse: collapse; min-width: 1080px; }
+
+  /* group headers */
+  tr.grp-row th {
+    padding: 7px 10px 5px;
+    font-family: 'Space Mono', monospace;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    border-bottom: none;
+  }
+  .grp-empty   { background: transparent; }
+  .grp-up      { background: var(--up-bg); color: var(--up); border-left: 2px solid var(--up-border); border-top: 1px solid var(--up-border); text-align: center; }
+  .grp-down    { background: var(--down-bg); color: var(--down); border-left: 2px solid var(--down-border); border-top: 1px solid var(--down-border); text-align: center; }
+  .grp-outcome { background: transparent; }
+
+  /* sub-headers */
+  th {
+    font-family: 'Space Mono', monospace;
+    font-size: 8.5px; letter-spacing: 0.1em; color: var(--muted);
+    text-transform: uppercase; padding: 7px 10px; text-align: left;
+    white-space: nowrap; border-bottom: 1px solid var(--border);
+  }
+  th.center { text-align: center; }
+  th.up-h  { background: var(--up-bg);   color: #86efac; border-left: 2px solid var(--up-border);   text-align: center; border-bottom: 1px solid var(--border); }
+  th.up-hc { background: var(--up-bg);   color: #86efac; text-align: center; border-bottom: 1px solid var(--border); }
+  th.dn-h  { background: var(--down-bg); color: #fca5a5; border-left: 2px solid var(--down-border); text-align: center; border-bottom: 1px solid var(--border); }
+  th.dn-hc { background: var(--down-bg); color: #fca5a5; text-align: center; border-bottom: 1px solid var(--border); }
+
+  /* rows */
+  tbody tr { border-bottom: 1px solid rgba(30,37,48,0.7); transition: background .12s; }
+  tbody tr:hover { background: rgba(240,180,41,0.025); }
+  tbody tr.live-row { background: rgba(240,180,41,0.04); }
+
+  td {
+    padding: 8px 10px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; white-space: nowrap; vertical-align: middle;
+  }
+
+  td.col-time  { color: var(--dim); font-size: 11px; }
+  td.col-range { font-size: 12px; color: var(--accent); letter-spacing: 0.04em; font-weight: 700; }
+
+  /* UP group */
+  td.up-start   { background: var(--up-bg); border-left: 2px solid var(--up-border); color: var(--up); font-weight: 700; font-size: 13px; text-align: center; }
+  td.up-min-val { background: var(--up-bg); color: #86efac; font-weight: 700; font-size: 13px; text-align: center; }
+  td.up-min-t   { background: var(--up-bg); text-align: center; }
+  td.up-max-val { background: var(--up-bg); color: #4ade80; font-weight: 700; font-size: 13px; text-align: center; }
+  td.up-max-t   { background: var(--up-bg); text-align: center; }
+
+  /* DOWN group */
+  td.dn-start   { background: var(--down-bg); border-left: 2px solid var(--down-border); color: var(--down); font-weight: 700; font-size: 13px; text-align: center; }
+  td.dn-min-val { background: var(--down-bg); color: #fca5a5; font-weight: 700; font-size: 13px; text-align: center; }
+  td.dn-min-t   { background: var(--down-bg); text-align: center; }
+  td.dn-max-val { background: var(--down-bg); color: #f87171; font-weight: 700; font-size: 13px; text-align: center; }
+  td.dn-max-t   { background: var(--down-bg); text-align: center; }
+
+  /* elapsed badge */
+  .t-el {
+    display: inline-block;
+    font-size: 10px; font-family: 'Space Mono', monospace;
+    padding: 1px 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    letter-spacing: 0.03em;
+  }
+  .t-el.up-t   { color: rgba(134,239,172,0.7); }
+  .t-el.dn-t   { color: rgba(252,165,165,0.7); }
+
+  /* outcome */
+  .outcome-tag {
+    display: inline-block; padding: 3px 10px;
+    font-size: 9px; letter-spacing: 0.12em; font-weight: 700; border-radius: 2px;
+  }
+  .outcome-up   { background: rgba(34,197,94,0.18);  color: var(--up);    border: 1px solid rgba(34,197,94,0.4); }
+  .outcome-down { background: rgba(239,68,68,0.18);  color: var(--down);  border: 1px solid rgba(239,68,68,0.4); }
+  .outcome-live { background: rgba(240,180,41,0.15); color: var(--accent); border: 1px solid rgba(240,180,41,0.4); animation: blinkO 1.2s ease-in-out infinite; }
+  @keyframes blinkO { 0%,100%{opacity:1} 50%{opacity:.5} }
+  .outcome-pending { color: var(--muted); font-size: 13px; }
+
+  /* bet */
+  .my-bet select {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-family: 'Space Mono', monospace;
+    font-size: 10px; padding: 4px 8px;
+    cursor: pointer; outline: none; border-radius: 2px; transition: border-color .2s;
+  }
+  .my-bet select:hover { border-color: var(--accent); }
+  .my-bet select.bet-up   { border-color: rgba(34,197,94,0.5); color: var(--up); }
+  .my-bet select.bet-down { border-color: rgba(239,68,68,0.5); color: var(--down); }
+
+  .result-cell { text-align: center; font-size: 11px; font-weight: 700; }
+  .result-win  { color: var(--up); }
+  .result-loss { color: var(--down); }
+
+  .empty-row td { text-align: center; padding: 60px; color: var(--muted); font-size: 11px; letter-spacing: 0.1em; }
+
+  /* notice */
+  .notice {
+    margin: 14px 20px -6px; padding: 10px 16px;
+    border: 1px solid rgba(240,180,41,0.18);
+    background: rgba(240,180,41,0.03);
+    font-family: 'Space Mono', monospace; font-size: 10px;
+    color: rgba(240,180,41,0.6); letter-spacing: 0.04em;
+  }
+
+  /* extreme highlight */
+  .hot { color: #fff !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">BTC<span>/</span>5MIN <span>// POLYMARKET TRACKER</span></div>
+  <div class="header-right">
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      <span id="lastUpdate">—</span>
+    </div>
+    <button class="btn" onclick="loadFromDB()">↻ REFRESH</button>
+    <button class="btn" id="btnBackfill" onclick="doBackfill()">⟳ BACKFILL</button>
+    <button class="btn" onclick="exportCSV()">↓ CSV</button>
+  </div>
+</header>
+
+<div id="loadingBar" class="loading-bar hidden"></div>
+
+<!-- LIVE PANEL -->
+<div class="live-panel">
+  <div class="live-cell">
+    <div class="cell-label">Текущий маркет</div>
+    <div class="cell-value accent" id="liveTime">—</div>
+    <div class="cell-sub" id="liveRange">ожидание данных...</div>
+  </div>
+  <div class="live-cell">
+    <div class="cell-label">Live UP / DOWN</div>
+    <div class="price-pair">
+      <div class="cell-value up"   id="liveUp">—</div>
+      <div class="vs">vs</div>
+      <div class="cell-value down" id="liveDown">—</div>
+    </div>
+    <div class="skew-bar"><div class="skew-fill" id="skewFill" style="width:50%"></div></div>
+  </div>
+  <div class="live-cell">
+    <div class="cell-label">Осталось</div>
+    <div class="cell-value accent" id="liveCountdown">—</div>
+    <div class="cell-sub">из 5:00 минут</div>
+  </div>
+  <div class="live-cell">
+    <div class="cell-label">Прошло от старта</div>
+    <div class="cell-value" style="color:var(--dim)" id="liveElapsed">—</div>
+    <div class="cell-sub" id="liveStatus">—</div>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats-bar">
+  <div class="stat-cell">
+    <div class="stat-label">Маркетов записано</div>
+    <div class="stat-value accent" id="statTotal">0</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-label">UP победил</div>
+    <div class="stat-value up" id="statUpWins">0</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-label">DOWN победил</div>
+    <div class="stat-value down" id="statDownWins">0</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-label">UP min ≤ 20¢ (случаев)</div>
+    <div class="stat-value" id="statMinUp">0</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-label">→ UP выиграл (конверсия)</div>
+    <div class="stat-value accent" id="statConv">—</div>
+  </div>
+</div>
+
+<div class="notice">
+  ⚠ Данные из trades API (ретроспективно, весь 5-минутный маркет). Нажмите BACKFILL для загрузки истории.
+</div>
+
+<!-- TABLE -->
+<div class="table-wrap">
+  <div class="table-header">
+    <div class="table-title">История маркетов — полная 5-минутная свеча</div>
+    <div class="table-meta" id="tableStatus"></div>
+  </div>
+  <table>
+    <thead>
+      <tr class="grp-row">
+        <th class="grp-empty" colspan="2"></th>
+        <th class="grp-up"    colspan="5">▲ UP</th>
+        <th class="grp-down"  colspan="5">▼ DOWN</th>
+        <th class="grp-outcome" colspan="3"></th>
+      </tr>
+      <tr>
+        <th>ДАТА UTC</th>
+        <th>ПЕРИОД</th>
+
+        <th class="up-h">СТАРТ</th>
+        <th class="up-hc">MIN ¢</th>
+        <th class="up-hc">@ М:СС</th>
+        <th class="up-hc">MAX ¢</th>
+        <th class="up-hc">@ М:СС</th>
+
+        <th class="dn-h">СТАРТ</th>
+        <th class="dn-hc">MIN ¢</th>
+        <th class="dn-hc">@ М:СС</th>
+        <th class="dn-hc">MAX ¢</th>
+        <th class="dn-hc">@ М:СС</th>
+
+        <th class="center">ИСХОД</th>
+        <th>СТАВКА</th>
+        <th class="center">ИТОГ</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody">
+      <tr class="empty-row"><td colspan="15">ЗАГРУЗКА ДАННЫХ...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+// ═══════════════════════════════════
+//  STATE
+// ═══════════════════════════════════
+var log = [];
+var activeSlug      = null;
+var liveInterval    = null;
+var cdInterval      = null;   // countdown
+var currentStartTs  = null;
+var currentEndTs    = null;
+
+// ═══════════════════════════════════
+//  INIT
+// ═══════════════════════════════════
+async function init() {
+  showLoading(true);
+  await loadFromDB();
+  showLoading(false);
+  startLive();
+}
+
+// ═══════════════════════════════════
+//  LOAD FROM DB
+// ═══════════════════════════════════
+async function loadFromDB() {
+  try {
+    showLoading(true);
+    const r = await fetch('/api/data');
+    if (!r.ok) throw new Error('api/data ' + r.status);
+    const rows = await r.json();
+    if (Array.isArray(rows) && rows.length) {
+      let bets = {};
+      try { bets = JSON.parse(localStorage.getItem('btc5min_bets') || '{}'); } catch(e) {}
+      log = rows.map(row => ({ ...row, bet: bets[row.slug] || null }));
+      renderTable();
+      updateStats();
+      setLastUpdate();
+    }
+  } catch(e) { console.warn('loadFromDB:', e); }
+  finally { showLoading(false); }
+}
+
+// ═══════════════════════════════════
+//  BACKFILL
+// ═══════════════════════════════════
+async function doBackfill() {
+  const btn = document.getElementById('btnBackfill');
+  btn.classList.add('loading');
+  btn.textContent = '⟳ LOADING...';
+  setStatus('ЗАГРУЗКА ИЗ TRADES API...');
+  try {
+    const r = await fetch('/api/backfill?limit=30');
+    if (!r.ok) throw new Error('backfill ' + r.status);
+    const res = await r.json();
+    setStatus('OK: +' + (res.filled || 0) + ' из ' + (res.total || '?') + ' маркетов');
+    await loadFromDB();
+  } catch(e) {
+    setStatus('ОШИБКА: ' + e.message);
+    console.warn('backfill:', e);
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = '⟳ BACKFILL';
+  }
+}
+
+// ═══════════════════════════════════
+//  LIVE TRACKING
+// ═══════════════════════════════════
+function startLive() {
+  fetchLive();
+  liveInterval = setInterval(fetchLive, 5000);
+}
+
+function getCurrentSlug() {
+  return 'btc-updown-5m-' + (Math.floor(Date.now() / 1000 / 300) * 300);
+}
+
+async function fetchLive() {
+  try {
+    const slug = getCurrentSlug();
+    const r = await fetch('/api/prices?slug=' + slug + '&t=' + Date.now());
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!d || !d.outcomePrices) return;
+
+    const prices  = JSON.parse(d.outcomePrices);
+    const upPct   = Math.round(prices[0] * 100);
+    const downPct = Math.round(prices[1] * 100);
+    const realSlug = d.slug || slug;
+
+    // Update live panel prices
+    document.getElementById('liveUp').textContent   = upPct + '¢';
+    document.getElementById('liveDown').textContent = downPct + '¢';
+    document.getElementById('skewFill').style.width = upPct + '%';
+
+    const endDateStr = d.endDate || (d.events && d.events[0] && d.events[0].endDate);
+    if (endDateStr) {
+      const endTs   = new Date(endDateStr).getTime();
+      const startTs = endTs - 5 * 60 * 1000;
+      currentEndTs   = endTs;
+      currentStartTs = startTs;
+
+      document.getElementById('liveTime').textContent =
+        hhmm(startTs) + '–' + hhmm(endTs) + ' UTC';
+      document.getElementById('liveRange').textContent =
+        fmtDate(startTs);
+
+      if (realSlug !== activeSlug) {
+        activeSlug = realSlug;
+        startCountdown(startTs, endTs);
+
+        // Добавить live-строку если её нет
+        if (!log.find(x => x.slug === realSlug)) {
+          log.unshift({
+            slug: realSlug,
+            time: new Date(startTs).toISOString(),
+            up_start: upPct, down_start: downPct,
+            up_min: null, up_min_time: null,
+            up_max: null, up_max_time: null,
+            down_min: null, down_min_time: null,
+            down_max: null, down_max_time: null,
+            outcome: null, _live: true
+          });
+          renderTable();
+        }
+      }
+    }
+    setLastUpdate();
+  } catch(e) { console.warn('fetchLive:', e); }
+}
+
+function startCountdown(startTs, endTs) {
+  if (cdInterval) clearInterval(cdInterval);
+  cdInterval = setInterval(function() {
+    const now       = Date.now();
+    const remaining = endTs - now;
+    const elapsed   = now - startTs;
+    if (remaining <= 0) {
+      document.getElementById('liveCountdown').textContent = '0:00';
+      document.getElementById('liveElapsed').textContent   = '5:00';
+      document.getElementById('liveStatus').textContent    = 'завершён';
+      clearInterval(cdInterval);
+      return;
+    }
+    document.getElementById('liveCountdown').textContent = fmtMs(remaining);
+    document.getElementById('liveElapsed').textContent   = fmtMs(elapsed);
+    document.getElementById('liveStatus').textContent    = remaining < 60000 ? '⚡ последняя минута' : 'активен';
+  }, 500);
+}
+
+// ═══════════════════════════════════
+//  RENDER TABLE
+// ═══════════════════════════════════
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  if (!log.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="15">НЕТ ДАННЫХ — нажмите BACKFILL</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = log.map((r, i) => {
+    const startMs = r.time ? new Date(r.time).getTime() : null;
+    const endMs   = startMs ? startMs + 5*60*1000 : null;
+
+    // Время достижения от старта маркета: М:СС
+    const upMinAt   = r.up_min_time   && startMs ? fmtMs(new Date(r.up_min_time).getTime()   - startMs) : '—';
+    const upMaxAt   = r.up_max_time   && startMs ? fmtMs(new Date(r.up_max_time).getTime()   - startMs) : '—';
+    const dnMinAt   = r.down_min_time && startMs ? fmtMs(new Date(r.down_min_time).getTime() - startMs) : '—';
+    const dnMaxAt   = r.down_max_time && startMs ? fmtMs(new Date(r.down_max_time).getTime() - startMs) : '—';
+
+    // Период "20:45–20:50"
+    const period = startMs ? hhmm(startMs) + '–' + hhmm(endMs) : '—';
+
+    // outcome
+    let ocHtml;
+    if (r._live && !r.outcome) {
+      ocHtml = '<span class="outcome-tag outcome-live">LIVE</span>';
+    } else if (r.outcome) {
+      ocHtml = `<span class="outcome-tag outcome-${r.outcome.toLowerCase()}">${r.outcome}</span>`;
+    } else {
+      ocHtml = '<span class="outcome-pending">—</span>';
+    }
+
+    const bCls = r.bet === 'UP' ? 'bet-up' : r.bet === 'DOWN' ? 'bet-down' : '';
+    const rHtml = (!r.bet || !r.outcome)
+      ? '<span style="color:var(--muted)">—</span>'
+      : r.bet === r.outcome ? '<span class="result-win">WIN</span>' : '<span class="result-loss">LOSS</span>';
+
+    const live = r._live ? ' live-row' : '';
+
+    // Подсветить экстремальные значения
+    const upMinCls  = (r.up_min   != null && r.up_min   <= 15) ? ' hot' : '';
+    const dnMinCls  = (r.down_min != null && r.down_min <= 15) ? ' hot' : '';
+
+    // Заглушка для live-строки
+    const ph = '<span style="color:var(--muted);font-size:10px">···</span>';
+
+    return `<tr class="${live}">
+      <td class="col-time">${startMs ? fmtDate(startMs) : '—'}</td>
+      <td class="col-range">${period}</td>
+
+      <td class="up-start">${r.up_start ?? '—'}</td>
+      <td class="up-min-val${upMinCls}">${r.up_min   ?? (r._live ? ph : '—')}</td>
+      <td class="up-min-t"><span class="t-el up-t">${upMinAt}</span></td>
+      <td class="up-max-val">${r.up_max   ?? (r._live ? ph : '—')}</td>
+      <td class="up-max-t"><span class="t-el up-t">${upMaxAt}</span></td>
+
+      <td class="dn-start">${r.down_start ?? '—'}</td>
+      <td class="dn-min-val${dnMinCls}">${r.down_min ?? (r._live ? ph : '—')}</td>
+      <td class="dn-min-t"><span class="t-el dn-t">${dnMinAt}</span></td>
+      <td class="dn-max-val">${r.down_max ?? (r._live ? ph : '—')}</td>
+      <td class="dn-max-t"><span class="t-el dn-t">${dnMaxAt}</span></td>
+
+      <td class="center">${ocHtml}</td>
+      <td class="my-bet">
+        <select class="${bCls}" onchange="setBet(${i},this.value,this)">
+          <option value="">—</option>
+          <option value="UP"   ${r.bet==='UP'  ?'selected':''}>▲ UP</option>
+          <option value="DOWN" ${r.bet==='DOWN'?'selected':''}>▼ DOWN</option>
+        </select>
+      </td>
+      <td class="result-cell">${rHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════
+//  STATS
+// ═══════════════════════════════════
+function updateStats() {
+  const done     = log.filter(r => r.outcome);
+  const upWins   = done.filter(r => r.outcome === 'UP').length;
+  const dnWins   = done.filter(r => r.outcome === 'DOWN').length;
+  const lowUp    = log.filter(r => r.up_min != null && r.up_min <= 20).length;
+  const lowUpWin = log.filter(r => r.up_min != null && r.up_min <= 20 && r.outcome === 'UP').length;
+  const conv     = lowUp > 0 ? Math.round(lowUpWin / lowUp * 100) + '%' : '—';
+
+  document.getElementById('statTotal').textContent    = log.length;
+  document.getElementById('statUpWins').textContent   = upWins;
+  document.getElementById('statDownWins').textContent = dnWins;
+  document.getElementById('statMinUp').textContent    = lowUp;
+  document.getElementById('statConv').textContent     = conv;
+}
+
+// ═══════════════════════════════════
+//  BET
+// ═══════════════════════════════════
+function setBet(i, val, sel) {
+  log[i].bet = val || null;
+  sel.className = val === 'UP' ? 'bet-up' : val === 'DOWN' ? 'bet-down' : '';
+  renderTable(); updateStats();
+  try {
+    const b = {};
+    log.forEach(r => { if (r.bet) b[r.slug] = r.bet; });
+    localStorage.setItem('btc5min_bets', JSON.stringify(b));
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════
+
+// Миллисекунды → "М:СС"
+function fmtMs(ms) {
+  if (ms == null || isNaN(ms) || ms < 0) return '—';
+  const s = Math.round(ms / 1000);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+// timestamp → "HH:MM"
+function hhmm(ts) {
+  const d = new Date(ts);
+  return String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0');
+}
+
+// timestamp → "DD.MM HH:MM"
+function fmtDate(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2,'0');
+  return p(d.getUTCDate()) + '.' + p(d.getUTCMonth()+1) + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+}
+
+function setLastUpdate() {
+  const d = new Date();
+  const p = n => String(n).padStart(2,'0');
+  document.getElementById('lastUpdate').textContent =
+    'UPD ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) + ' UTC';
+}
+function showLoading(v)  { document.getElementById('loadingBar').classList.toggle('hidden', !v); }
+function setStatus(txt)  { document.getElementById('tableStatus').textContent = txt; }
+
+// ═══════════════════════════════════
+//  CSV EXPORT
+// ═══════════════════════════════════
+function exportCSV() {
+  const h = ['date','period','up_start','up_min','up_min_at','up_max','up_max_at',
+             'down_start','down_min','down_min_at','down_max','down_max_at',
+             'outcome','bet','result'];
+  const rows = log.map(r => {
+    const st  = r.time ? new Date(r.time).getTime() : null;
+    const at  = (iso) => iso && st ? fmtMs(new Date(iso).getTime() - st) : '';
+    const res = (r.bet && r.outcome) ? (r.bet===r.outcome?'WIN':'LOSS') : '';
+    const per = st ? hhmm(st) + '-' + hhmm(st + 5*60*1000) : '';
+    return [
+      st ? fmtDate(st) : '', per,
+      r.up_start??'', r.up_min??'', at(r.up_min_time), r.up_max??'', at(r.up_max_time),
+      r.down_start??'', r.down_min??'', at(r.down_min_time), r.down_max??'', at(r.down_max_time),
+      r.outcome||'', r.bet||'', res
+    ].join(',');
+  });
+  const blob = new Blob([[h.join(','), ...rows].join('\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'btc5min_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+// ═══════════════════════════════════
+//  START
+// ═══════════════════════════════════
+init();
+</script>
+</body>
+</html>
