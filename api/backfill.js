@@ -54,11 +54,10 @@ export default async function handler(req, res) {
         const conditionId = market.conditionId;
         const endTs = new Date(market.endDate).getTime();
 
-        // Берём точный startTime маркета из Gamma API (не endDate - 5min)
-        // eventStartTime — точное время открытия торгов данного периода
-        const eventStartTime = market.eventStartTime || market.events?.[0]?.startTime;
-        const startTs = eventStartTime
-          ? new Date(eventStartTime).getTime()
+        // eventStartTime — единственное надёжное поле с реальным временем старта торгов
+        // events[0].startTime НЕ использовать — это дата создания события, не старт торгов
+        const startTs = market.eventStartTime
+          ? new Date(market.eventStartTime).getTime()
           : endTs - 5 * 60 * 1000;
 
         // Пропускаем если маркет ещё не завершился
