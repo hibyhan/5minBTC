@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
-  const limit = Math.min(parseInt(req.query.limit || '20', 10), 50);
+  const limit = Math.min(parseInt(req.query.limit || '10', 10), 20);
 
   try {
     // Генерируем последние N завершённых маркетов
@@ -52,19 +52,38 @@ export default async function handler(req, res) {
         if (!market || !market.conditionId || !market.endDate) continue;
 
         const conditionId = market.conditionId;
-        const endTs   = new Date(market.endDate).getTime();
-        const startTs = endTs - 5 * 60 * 1000;
+        const endTs = new Date(market.endDate).getTime();
+
+        // Берём точный startTime маркета из Gamma API (не endDate - 5min)
+        // eventStartTime — точное время открытия торгов данного периода
+        const eventStartTime = market.eventStartTime || market.events?.[0]?.startTime;
+        const startTs = eventStartTime
+          ? new Date(eventStartTime).getTime()
+          : endTs - 5 * 60 * 1000;
 
         // Пропускаем если маркет ещё не завершился
         if (endTs > Date.now()) continue;
 
-        // Тянем сделки
-        const tradesResp = await fetch(
-          `https://data-api.polymarket.com/trades?market=${conditionId}&limit=500&offset=0`
-        );
-        if (!tradesResp.ok) continue;
-        const trades = await tradesResp.json();
-        if (!Array.isArray(trades) || !trades.length) continue;
+        // Тянем сделки с пагинацией (API отдаёт от новых к старым)
+        const trades = [];
+        let offset = 0;
+        let reachedStart = false;
+        while (!reachedStart) {
+          const tradesResp = await fetch(
+            `https://data-api.polymarket.com/trades?market=${conditionId}&limit=500&offset=${offset}`
+          );
+          if (!tradesResp.ok) break;
+          const batch = await tradesResp.json();
+          if (!Array.isArray(batch) || !batch.length) break;
+          for (const t of batch) {
+            if (t.timestamp * 1000 >= startTs) trades.push(t);
+          }
+          const oldest = batch[batch.length - 1];
+          if (oldest.timestamp * 1000 < startTs) reachedStart = true;
+          offset += 500;
+          if (offset > 15000) break; // защита: макс 30 запросов на маркет
+        }
+        if (!trades.length) continue;
 
         // Фильтр по окну маркета + разбивка по стороне
         const upTrades   = trades.filter(t => t.outcome === 'Up'   && inW(t, startTs, endTs));
