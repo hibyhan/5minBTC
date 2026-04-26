@@ -1,15 +1,14 @@
 // api/backfill.js
 // Генерирует slugи btc-updown-5m-{timestamp} самостоятельно
-// Берёт последние N завершённых маркетов и пишет в Supabase
+// Берёт последние N завершённых маркетов и пишет в локальный JSON-стор
 
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { rowExists, upsertRow } from './store.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
-  const limit = Math.min(parseInt(req.query.limit || '10', 10), 20);
+  const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
 
   try {
     // Генерируем последние N завершённых маркетов
@@ -30,16 +29,9 @@ export default async function handler(req, res) {
     for (const slug of slugs) {
       try {
         // Проверяем — уже есть в базе с данными?
-        const check = await fetch(
-          `${SB_URL}/rest/v1/markets5min?slug=eq.${encodeURIComponent(slug)}&select=slug,up_min`,
-          { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }
-        );
-        if (check.ok) {
-          const ex = await check.json();
-          if (ex && ex.length > 0 && ex[0].up_min != null) {
-            skipped++;
-            continue;
-          }
+        if (rowExists(slug)) {
+          skipped++;
+          continue;
         }
 
         // Получаем conditionId и endDate из Gamma API
@@ -55,7 +47,6 @@ export default async function handler(req, res) {
         const endTs = new Date(market.endDate).getTime();
 
         // eventStartTime — единственное надёжное поле с реальным временем старта торгов
-        // events[0].startTime НЕ использовать — это дата создания события, не старт торгов
         const startTs = market.eventStartTime
           ? new Date(market.eventStartTime).getTime()
           : endTs - 5 * 60 * 1000;
@@ -120,24 +111,9 @@ export default async function handler(req, res) {
           skew: skewLabel(upStart, downStart)
         };
 
-        // Upsert в Supabase
-        const upsert = await fetch(`${SB_URL}/rest/v1/markets5min`, {
-          method: 'POST',
-          headers: {
-            apikey: SB_KEY,
-            Authorization: `Bearer ${SB_KEY}`,
-            'Content-Type': 'application/json',
-            Prefer: 'resolution=merge-duplicates'
-          },
-          body: JSON.stringify(row)
-        });
-
-        if (upsert.ok || upsert.status === 201) {
-          filled++;
-        } else {
-          const err = await upsert.text();
-          errors.push({ slug, err: err.slice(0, 120) });
-        }
+        // Upsert в локальный стор
+        upsertRow(row);
+        filled++;
 
       } catch (e) {
         errors.push({ slug, err: e.message });

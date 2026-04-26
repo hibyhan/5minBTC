@@ -1,0 +1,14 @@
+{
+  "name": "btc5min-tracker",
+  "version": "1.0.0",
+  "description": "BTC 5min Polymarket Tracker",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
