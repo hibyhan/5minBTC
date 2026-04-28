@@ -1,12 +1,15 @@
 // api/data.js
 // Читает данные из Supabase через service_role key (обходит RLS)
+import { buildRecentRows } from './market-data.js';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
   const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!SUPABASE_URL || !SUPABASE_KEY) {
-    return res.status(500).json({ error: 'Missing env vars' });
+    const rows = await buildRecentRows(12);
+    return res.status(200).json(rows);
   }
   try {
     const response = await fetch(
