@@ -3,7 +3,7 @@ export async function buildRecentRows(limit = 12) {
   const currentBucket = Math.floor(now / 300) * 300;
   const slugs = [];
 
-  for (let i = 2; i <= Math.min(limit + 1, 31); i++) {
+  for (let i = 1; i <= Math.min(limit, 30); i++) {
     slugs.push(`btc-updown-5m-${currentBucket - i * 300}`);
   }
 
@@ -13,7 +13,42 @@ export async function buildRecentRows(limit = 12) {
     if (row) rows.push(row);
   }
 
-  return rows;
+  if (rows.length) return rows;
+
+  const liveRow = await buildLiveRow(`btc-updown-5m-${currentBucket}`).catch(() => null);
+  return liveRow ? [liveRow] : [];
+}
+
+export async function buildLiveRow(slug) {
+  const market = await fetchMarket(slug);
+  if (!market || !market.endDate || !market.outcomePrices) return null;
+
+  const prices = parseOutcomePrices(market.outcomePrices);
+  if (!prices) return null;
+
+  const endTs = new Date(market.endDate).getTime();
+  const startTs = endTs - 5 * 60 * 1000;
+  const upStart = pct(prices[0]);
+  const downStart = pct(prices[1]);
+
+  return {
+    slug: market.slug || slug,
+    time: new Date(startTs).toISOString(),
+    market: market.question || slug,
+    up_start: upStart,
+    down_start: downStart,
+    up_min: null,
+    up_min_time: null,
+    up_max: null,
+    up_max_time: null,
+    down_min: null,
+    down_min_time: null,
+    down_max: null,
+    down_max_time: null,
+    outcome: null,
+    skew: skewLabel(upStart, downStart),
+    _live: true
+  };
 }
 
 export async function buildMarketRow(slug) {
@@ -134,6 +169,17 @@ function extremes(trades) {
 
 function pct(price) {
   return Math.round(Number(price) * 100);
+}
+
+function parseOutcomePrices(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed) || parsed.length < 2) return null;
+    const prices = parsed.slice(0, 2).map(Number);
+    return prices.every(Number.isFinite) ? prices : null;
+  } catch {
+    return null;
+  }
 }
 
 function skewLabel(up, down) {
