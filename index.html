@@ -314,7 +314,7 @@
 </div>
 
 <div class="notice">
-  ⚠ Данные из trades API (ретроспективно, весь 5-минутный маркет). Нажмите BACKFILL для загрузки истории.
+  ⚠ Live и история работают от Polymarket API. Если Supabase env vars заданы, BACKFILL дополнительно сохраняет историю.
 </div>
 
 <!-- TABLE -->
@@ -412,6 +412,11 @@ async function doBackfill() {
     const r = await fetch('/api/backfill?limit=30');
     if (!r.ok) throw new Error('backfill ' + r.status);
     const res = await r.json();
+    if (Array.isArray(res.rows)) {
+      mergeRows(res.rows);
+      setStatus('OK: загружено ' + res.rows.length + ' маркетов из Polymarket API');
+      return;
+    }
     setStatus('OK: +' + (res.filled || 0) + ' из ' + (res.total || '?') + ' маркетов');
     await loadFromDB();
   } catch(e) {
@@ -421,6 +426,17 @@ async function doBackfill() {
     btn.classList.remove('loading');
     btn.textContent = '⟳ BACKFILL';
   }
+}
+
+function mergeRows(rows) {
+  let bets = {};
+  try { bets = JSON.parse(localStorage.getItem('btc5min_bets') || '{}'); } catch(e) {}
+  const bySlug = new Map(log.map(row => [row.slug, row]));
+  rows.forEach(row => bySlug.set(row.slug, { ...row, bet: bets[row.slug] || bySlug.get(row.slug)?.bet || null }));
+  log = Array.from(bySlug.values()).sort((a, b) => new Date(b.time) - new Date(a.time));
+  renderTable();
+  updateStats();
+  setLastUpdate();
 }
 
 // ═══════════════════════════════════
@@ -443,7 +459,8 @@ async function fetchLive() {
     const d = await r.json();
     if (!d || !d.outcomePrices) return;
 
-    const prices  = JSON.parse(d.outcomePrices);
+    const prices  = parseOutcomePrices(d.outcomePrices);
+    if (!prices) return;
     const upPct   = Math.round(prices[0] * 100);
     const downPct = Math.round(prices[1] * 100);
     const realSlug = d.slug || slug;
@@ -648,6 +665,17 @@ function setLastUpdate() {
 }
 function showLoading(v)  { document.getElementById('loadingBar').classList.toggle('hidden', !v); }
 function setStatus(txt)  { document.getElementById('tableStatus').textContent = txt; }
+
+function parseOutcomePrices(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed) || parsed.length < 2) return null;
+    const prices = parsed.slice(0, 2).map(Number);
+    return prices.every(Number.isFinite) ? prices : null;
+  } catch(e) {
+    return null;
+  }
+}
 
 // ═══════════════════════════════════
 //  CSV EXPORT

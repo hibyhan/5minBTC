@@ -2,14 +2,25 @@
 // Генерирует slugи btc-updown-5m-{timestamp} самостоятельно
 // Берёт последние N завершённых маркетов и пишет в Supabase
 
+import { buildRecentRows } from './market-data.js';
+
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-
   const limit = Math.min(parseInt(req.query.limit || '10', 10), 20);
+
+  if (!SB_URL || !SB_KEY) {
+    const rows = await buildRecentRows(limit);
+    return res.status(200).json({
+      filled: rows.length,
+      skipped: 0,
+      total: rows.length,
+      rows
+    });
+  }
 
   try {
     // Генерируем последние N завершённых маркетов

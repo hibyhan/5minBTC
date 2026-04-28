@@ -8,9 +8,10 @@ export default async function handler(req, res) {
   try {
     const ts = Date.now();
     const gammaRes = await fetch(
-      `https://gamma-api.polymarket.com/markets?slug=${slug}&_=${ts}`,
+      `https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(slug)}&_=${ts}`,
       { headers: { 'User-Agent': 'Mozilla/5.0', 'Cache-Control': 'no-cache' }, cache: 'no-store' }
     );
+    if (!gammaRes.ok) return res.status(gammaRes.status).json({ error: 'Gamma API ' + gammaRes.status });
     const data = await gammaRes.json();
     if (!data || !data[0]) return res.status(404).json({ error: 'Market not found' });
     return res.status(200).json(data[0]);

@@ -1,0 +1,14 @@
+{
+  "name": "btc-5min-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.js",
+    "start": "node dev-server.js",
+    "check": "node --check dev-server.js && node --check api/data.js && node --check api/prices.js && node --check api/history.js && node --check api/backfill.js && node --check api/market-data.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
